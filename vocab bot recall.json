@@ -1,0 +1,574 @@
+{
+  "name": "vocab bot recall",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2080,
+        912
+      ],
+      "id": "8e1b4b8f-1560-4ceb-8c18-8a9c2a93caf1",
+      "name": "Every Hour"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"vocab_db\": \"3f5d42b79906801985bfed0569b48433\",\n  \"settings_db\": \"3f5d42b7990680f28048d967c4d075ba\",\n  \"default_source\": \"fr\",\n  \"default_target\": \"en\",\n  \"default_level\": \"b2\",\n  \"default_recall_hours\": \"8\",\n  \"default_daily_words\": 10,\n  \"timezone\": \"Europe/Paris\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2512,
+        1008
+      ],
+      "id": "dedc672c-f7c8-4ce8-8d1e-7029c06393e6",
+      "name": "Config",
+      "notesInFlow": true,
+      "notes": "Same values as the main workflow's Config."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.settings_db }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ page_size: 100 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2736,
+        1008
+      ],
+      "id": "bfafe260-a3c5-4470-9157-baec34221ad8",
+      "name": "Get All Settings",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.vocab_db }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ page_size: 100, filter: $('Run Context').first().json.chat_id ? { property: 'Chat ID', rich_text: { equals: $('Run Context').first().json.chat_id } } : undefined, sorts: [{ property: 'Next Review', direction: 'ascending' }] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2960,
+        1008
+      ],
+      "id": "bb1a9d81-c542-4ecc-9a3e-ad796369a623",
+      "name": "Get Words",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "notes": "All words, closest review first (only the asking chat on /review). Due words come first; Pick Due Words decides."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs every hour from the schedule, or right away when /review calls this workflow.\n// Schedule: only chats whose recall hour is now; daily words are split over the sessions.\n// /review: only the chat that asked, whatever the hour.\n// Words due today (or earlier) come first. If nothing is due, the chat gets the one word whose\n// review is closest (sent early), so there is always something to practise.\nconst cfg = $('Config').first().json;\nconst run = $('Run Context').first().json;\nconst plain = (p) => ((p && (p.rich_text || p.title)) || []).map(t => t.plain_text).join('').trim();\nconst now = $now.setZone(cfg.timezone);\nconst today = now.toISODate();\nconst hoursOf = (v) => {\n  const h = String(v || '').split(',').filter(Boolean).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 23);\n  return h.length ? h : String(cfg.default_recall_hours).split(',').map(Number);\n};\nconst settings = {};\nfor (const row of ($('Get All Settings').first().json.results || [])) {\n  const p = row.properties || {};\n  const words = parseInt(plain(p['Daily Words']), 10);\n  settings[plain(p['Chat ID'])] = {\n    source: plain(p['Source Language']).toLowerCase() || cfg.default_source,\n    hours: hoursOf(plain(p['Recall Hours'])),\n    words: words >= 1 && words <= 20 ? words : cfg.default_daily_words\n  };\n}\nconst fallback = { source: cfg.default_source, hours: hoursOf(''), words: cfg.default_daily_words };\nconst esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst escRe = (v) => v.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst nextReview = (page) => String((((page.properties || {})['Next Review'] || {}).date || {}).start || '').slice(0, 10);\n\n// Group the words by chat. Notion already sorted them: closest Next Review first.\nconst byChat = {};\nfor (const page of ($json.results || [])) {\n  const p = page.properties || {};\n  const chat = plain(p['Chat ID']);\n  const s = settings[chat] || fallback;\n  const lang = ((p['Language'] || {}).select || {}).name || '';\n  if (!chat || !plain(p['Word']) || lang !== s.source) continue;\n  if (run.manual && chat !== run.chat_id) continue;\n  (byChat[chat] = byChat[chat] || []).push(page);\n}\n\n// One quiz card: the word is blanked in its sentence and hidden in a spoiler.\nconst card = (page, chat, early) => {\n  const p = page.properties || {};\n  const word = plain(p['Word']);\n  const wordLang = ((p['Language'] || {}).select || {}).name || '';\n  const sentence = plain(p['Sentence']);\n  // blank the word (or its first 5 letters for conjugated forms) inside the sentence.\n  // Chinese and Japanese have no spaces, so only the exact word is blanked there.\n  const exact = new RegExp(escRe(word), 'iu');\n  const stem = new RegExp(escRe(word.split(' ')[0].slice(0, 5)) + '\\\\p{L}*', 'iu');\n  const spaced = !['zh', 'ja'].includes(wordLang);\n  const re = exact.test(sentence) ? exact : (spaced && word.length >= 5 && stem.test(sentence) ? stem : null);\n  const cloze = sentence && re ? sentence.replace(re, '_____') : '';\n  const translation = plain(p['Translation']);\n  const lines = [];\n  if (early) lines.push('<i>nothing due today, here is a word to review early</i>', '');\n  lines.push('🫐 <b>' + esc(plain(p['Definition'])) + '</b>');\n  if (translation) lines.push('🪷 ' + esc(translation));\n  if (cloze) lines.push('', '<i>' + esc(cloze) + '</i>');\n  lines.push('', 'answer: <tg-spoiler>' + esc(word) + ' ' + esc(plain(p['Part of Speech'])) + '</tg-spoiler>');\n  // due = false for early words: Mark As Sent is skipped, so their schedule is not pulled forward\n  return { json: { chat_id: chat, page_id: page.id.replace(/-/g, ''), due: !early, text: lines.join('\\n') } };\n};\n\nconst out = [];\nfor (const chat of Object.keys(byChat)) {\n  const s = settings[chat] || fallback;\n  if (!run.manual && !s.hours.includes(now.hour)) continue;\n  const pages = byChat[chat];\n  const due = pages.filter(page => nextReview(page) && nextReview(page) <= today);\n  const perSession = Math.ceil(s.words / s.hours.length);\n  if (due.length) due.slice(0, perSession).forEach(page => out.push(card(page, chat, false)));\n  // early word: always on /review, but only at the first session of the day on the schedule\n  else if (run.manual || now.hour === s.hours[0]) out.push(card(pages[0], chat, true));\n}\n\n// /review with no saved words at all: one item that says so (Anything To Send? sends it).\nif (run.manual && !out.length) {\n  return [{ json: { chat_id: run.chat_id, empty: true,\n    text: 'no words to review yet 🌀\\nsave some first with /article &lt;topic&gt; or /add &lt;word&gt;' } }];\n}\nreturn out; // scheduled run with nothing to send -> no items -> the run stops here"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        1008
+      ],
+      "id": "e7b164d2-5dbb-4bdc-a597-0eab8af92487",
+      "name": "Pick Due Words"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3632,
+        912
+      ],
+      "id": "c6428859-882e-498f-81e8-c2069658ef17",
+      "name": "One Word At A Time"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🌠 i know this",
+                    "additionalFields": {
+                      "callback_data": "=k:{{ $json.page_id }}"
+                    }
+                  },
+                  {
+                    "text": "🍄 no clue",
+                    "additionalFields": {
+                      "callback_data": "=n:{{ $json.page_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3856,
+        1008
+      ],
+      "id": "c9836c1c-49f4-49dc-88bf-81e1dcc7e2e9",
+      "name": "Send Recall Prompt",
+      "webhookId": "6c0dde78-5614-4f7b-a13c-745f3f5599bd",
+      "notesInFlow": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      },
+      "notes": "Taps go to the main workflow's Telegram Trigger (route: button)."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $('One Word At A Time').item.json.page_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { 'Next Review': { date: { start: $now.setZone($('Config').first().json.timezone).plus({ days: 1 }).toISODate() } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4304,
+        912
+      ],
+      "id": "acb7466c-74e3-40fd-a3d0-6ccb6c241ec1",
+      "name": "Mark As Sent",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Next Review -> tomorrow, so a second session the same day doesn't resend it. A button tap overrides it."
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4528,
+        1008
+      ],
+      "id": "f7bfa5df-d841-43a7-9cbf-6da4a0fff7d9",
+      "name": "Wait 1 Second",
+      "webhookId": "ea34461c-821b-4f16-a709-f44b38fec6f0"
+    },
+    {
+      "parameters": {
+        "content": "## Active recall (also a sub-workflow)\nTwo ways in: **Every Hour** (sends only at each chat's /time hours) or **Review Requested** (called by /review in the main workflow, sends right away to that chat). Due words first; nothing due → one word early. Button taps come back through the main workflow, because a bot has one webhook.",
+        "height": 180,
+        "width": 2700,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        704
+      ],
+      "id": "e2c83135-9456-4ba3-b8ed-fa8067d8a1c7",
+      "name": "Note Recall"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "chat_id"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        2080,
+        1104
+      ],
+      "id": "f13b17d7-2a1f-4356-9d4f-42e06bd67a33",
+      "name": "Review Requested",
+      "notesInFlow": true,
+      "notes": "Called by /review in the main workflow, with the chat_id of the user who asked."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Who asked? The schedule trigger has no chat_id; /review (main workflow) passes one.\n// manual = true means: send now, only to that chat, whatever the hour.\nconst chat = String($json.chat_id || '').trim();\nreturn [{ json: { manual: chat !== '', chat_id: chat } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        1008
+      ],
+      "id": "8f63b917-8fc7-4584-aa7d-790845af61fb",
+      "name": "Run Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a24f4ec7-e4d3-4be7-bd02-72a4e99bcaa7",
+              "leftValue": "={{ $json.empty !== true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3408,
+        1008
+      ],
+      "id": "531213c7-1793-425e-9656-22d9f1c691ad",
+      "name": "Anything To Send?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4fb93ea3-07b3-4e39-bd1f-509459ebec4a",
+              "leftValue": "={{ $('One Word At A Time').item.json.due }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4080,
+        1008
+      ],
+      "id": "ce8c756b-f9ec-4b81-8dc8-f3bdcb5e01c7",
+      "name": "Due Today?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3632,
+        1184
+      ],
+      "id": "14b1373a-2d9f-417b-9396-bea735dc6e35",
+      "name": "Send Nothing To Review",
+      "webhookId": "b6954d49-7198-4814-92c2-8342e6ada0b5",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Run Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Requested": {
+      "main": [
+        [
+          {
+            "node": "Run Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Context": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get All Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Settings": {
+      "main": [
+        [
+          {
+            "node": "Get Words",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Words": {
+      "main": [
+        [
+          {
+            "node": "Pick Due Words",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Due Words": {
+      "main": [
+        [
+          {
+            "node": "Anything To Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything To Send?": {
+      "main": [
+        [
+          {
+            "node": "One Word At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Nothing To Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One Word At A Time": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Recall Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Recall Prompt": {
+      "main": [
+        [
+          {
+            "node": "Due Today?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Due Today?": {
+      "main": [
+        [
+          {
+            "node": "Mark As Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 1 Second",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark As Sent": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 Second",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 Second": {
+      "main": [
+        [
+          {
+            "node": "One Word At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d2885b2a-1faf-4e43-a0d4-ba9bf8dd13a1",
+  "meta": {
+    "instanceId": "e86daec22b70130ce96081bce6e5d66c20b6a2b27fdb6661dc160e3f5d1179ea"
+  },
+  "nodeGroups": [],
+  "id": "WZMIUOtrxyI3XAfL",
+  "tags": []
+}
