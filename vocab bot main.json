@@ -1,0 +1,2370 @@
+{
+  "name": "vocab bot main",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        9872,
+        7200
+      ],
+      "id": "6b16b18f-e872-4597-906f-0ea1e79f1c8e",
+      "name": "Telegram Trigger",
+      "webhookId": "7adfbf91-4647-42d8-a517-0a21ed1a6188",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"vocab_db\": \"3f5d42b79906801985bfed0569b48433\",\n  \"settings_db\": \"3f5d42b7990680f28048d967c4d075ba\",\n  \"default_source\": \"fr\",\n  \"default_target\": \"en\",\n  \"default_level\": \"b2\",\n  \"default_recall_hours\": \"8\",\n  \"default_daily_words\": 10,\n  \"timezone\": \"Europe/Paris\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        10096,
+        7200
+      ],
+      "id": "1147d77c-161c-49ae-8701-c098a227ae33",
+      "name": "Config",
+      "notesInFlow": true,
+      "notes": "Paste your two Notion database IDs here (same values in the recall workflow)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// One shape for every Telegram update, message or button tap.\n// Everything later reads these fields instead of digging into the raw update.\nconst u = $('Telegram Trigger').first().json;\nconst msg = u.message || {};\nconst cb = u.callback_query;\nconst text = String(msg.text || '').trim();\nconst chatId = cb ? cb.message.chat.id : (msg.chat ? msg.chat.id : '');\n\nlet command = '';\nlet arg = text;\nif (text.startsWith('/')) {\n  const sp = text.indexOf(' ');\n  command = (sp < 0 ? text : text.slice(0, sp)).toLowerCase().split('@')[0]; // \"/add@MyBot\" -> \"/add\"\n  arg = sp < 0 ? '' : text.slice(sp + 1).trim();\n}\n\n// route decides the Switch branch. Empty, too long or unknown -> usage message.\n// /lang, /level, /time and /words all share the \"settings\" branch.\nconst SETTINGS = ['/lang', '/level', '/time', '/words'];\nlet route = 'help';\nif (cb) route = 'button';\nelse if (!text || text.length > 200) route = 'help';\nelse if (SETTINGS.includes(command)) route = 'settings';\nelse if (command === '/review') route = 'review';\nelse if (command === '/add') route = arg ? 'add' : 'help';\nelse if (command === '' || command === '/article') route = arg ? 'article' : 'help';\n\nreturn [{ json: {\n  chat_id: String(chatId),\n  text, command, arg, route,\n  callback_id: cb ? cb.id : '',\n  callback_data: cb ? String(cb.data || '') : '',\n  message_id: cb ? cb.message.message_id : null,\n  message_text: cb ? String(cb.message.text || '') : ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10320,
+        7200
+      ],
+      "id": "b1b811d6-1f22-4ebb-8dbb-0e54ff616c34",
+      "name": "Normalize The Update"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "eac39cf7-17ed-42a8-946c-c0d45cb88fd7",
+              "leftValue": "={{ $json.route !== 'help' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        10528,
+        7200
+      ],
+      "id": "ef46f7a7-5e3c-4cae-a8bf-072f00a1e866",
+      "name": "Usable Message?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalize The Update').first().json.chat_id }}",
+        "text": "hiii! i'm a bot to assist you in learning new vocab 🐙\ni find news or wikipedia articles based on your interest and create vocabulary lists from them, and i'll test you daily using active recall 🪷\n\n<b>commands for you:</b>\n\n🐠 /article &lt;topic&gt; : an article on the topic, 15 words saved by theme\n\n🐟 /add &lt;word, word&gt; : save words or expressions (max 5, comma-separated)\n\n🐋 /lang fr en : learn French, translations in English (try sending /lang once to check out all available languages)\n\n🐋 /level c1 : set your level for the language (a1 to c2) &amp; get tailored vocab and definitions\n\n🐋 /time 8 or /time 8 20 : get your active recall once or twice a day (hours from 0 to 23)\n\n🐋 /words 10 : how many words you want to be tested on every day (1 to 20)\n\n🦑 /review : get a recall quiz right now, without waiting for your /time\n\n🪼 /help : you'll receive this message",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        10752,
+        7424
+      ],
+      "id": "fe1c0627-4a76-49af-9a02-4b9068c2303a",
+      "name": "Send Help",
+      "webhookId": "78b0194b-9e23-487e-b81f-57215bd11950",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.settings_db }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filter: { property: 'Chat ID', title: { equals: $json.chat_id } }, page_size: 1 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        10752,
+        7120
+      ],
+      "id": "f4b57de1-9e75-4b6c-baa3-f11417081964",
+      "name": "Get Settings",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Notion is the bot's memory: one Settings row per chat. No row yet -> defaults.\nconst cfg = $('Config').first().json;\nconst upd = $('Normalize The Update').first().json;\nconst row = ($json.results || [])[0];\nconst plain = (p) => ((p && (p.rich_text || p.title)) || []).map(t => t.plain_text).join('').trim().toLowerCase();\nconst source = row ? plain(row.properties['Source Language']) : '';\nconst target = row ? plain(row.properties['Target Language']) : '';\nconst level = row ? plain(row.properties['Level']) : '';\n// level -> range of words to pick (a b2 learner gets b2-c1 words, not c2)\nconst RANGE = { a1: 'A1-A2', a2: 'A2-B1', b1: 'B1-B2', b2: 'B2-C1', c1: 'C1-C2', c2: 'C2' };\nconst lvl = RANGE[level] ? level : cfg.default_level;\nreturn [{ json: {\n  ...upd,\n  source: source || cfg.default_source,\n  target: target || cfg.default_target,\n  level: lvl.toUpperCase(),\n  level_range: RANGE[lvl],\n  settings_page_id: row ? row.id : ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10976,
+        7120
+      ],
+      "id": "e07ce66b-0432-46c1-a9b8-57f1815d1ee1",
+      "name": "Apply Settings"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "fe772a48-7406-488b-bee9-cbada3922067",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "article",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "article"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "12738180-bfba-4f9a-b12c-553d68edb7f3",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "add"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d9a0c5ca-79a9-404e-85d6-b8ffd9ea153c",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "settings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "settings"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9c4f9f04-fafe-4bca-b0b2-118b1867802d",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "button",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "button"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "fa79b3c0-e7be-4167-a9b7-eeb9c4774604",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "review"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        11200,
+        7120
+      ],
+      "id": "6ebb730b-1abe-4c76-8470-57eb42a235d7",
+      "name": "Route The Update"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "timeout": 60000,
+          "maxRetries": 3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        12304,
+        6208
+      ],
+      "id": "7c40364e-8fd7-4936-8521-152243a12e68",
+      "name": "OpenAI Chat Model",
+      "notesInFlow": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "33C15hO6wZuUUSh1",
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "Max Retries 3: a busy or rate-limited OpenAI call is retried here, for both LLM chains."
+    },
+    {
+      "parameters": {
+        "jsCode": "// GNews q syntax treats quotes, parentheses and operators specially: keep words only.\nconst s = $json;\nconst topic = s.arg.replace(/[\"()]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 190);\nreturn [{ json: { ...s, topic } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11440,
+        6448
+      ],
+      "id": "9e4c5842-2ba7-44d8-ba3a-331318ab112f",
+      "name": "Prepare Search"
+    },
+    {
+      "parameters": {
+        "url": "https://gnews.io/api/v4/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.topic }}"
+            },
+            {
+              "name": "lang",
+              "value": "={{ $json.source }}"
+            },
+            {
+              "name": "max",
+              "value": "10"
+            },
+            {
+              "name": "sortby",
+              "value": "relevance"
+            },
+            {
+              "name": "from",
+              "value": "={{ $now.minus({ days: 29 }).toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+            },
+            {
+              "name": "to",
+              "value": "={{ $now.minus({ hours: 13 }).toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        11888,
+        6352
+      ],
+      "id": "41fa0947-1eb0-47a1-9c52-edf31560b6e3",
+      "name": "Search GNews",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "2DFDhC4t3t38OHn1",
+          "name": "Query Auth account"
+        }
+      },
+      "notes": "Free plan: 100 requests a day, articles between 12 hours and 30 days old. from/to keep the search inside that window."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keep up to 5 GNews results, one item per article: the next nodes try all of them,\n// because many news pages are paywalled or block bots. GNews errors (bad key, quota) arrive as\n// {errors: [...]} with neverError on, and are kept so the reply can say what happened.\nconst articles = (Array.isArray($json.articles) ? $json.articles : []).filter(a => a && a.url).slice(0, 5);\nif (!articles.length) {\n  // errors = the request failed; information = plan notices (12-hour delay, 30-day limit)\n  const why = $json.errors ? 'gnews error: ' + JSON.stringify($json.errors).slice(0, 150)\n            : $json.information ? 'gnews returned nothing usable: ' + JSON.stringify($json.information).slice(0, 150)\n            : 'gnews found no article for this topic';\n  return [{ json: { found: false, reason: why } }];\n}\nreturn articles.map(a => ({ json: {\n  found: true,\n  url: a.url,\n  title: String(a.title || ''),\n  outlet: a.source ? String(a.source.name || '') : '',\n  description: String(a.description || '')\n} }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12096,
+        6352
+      ],
+      "id": "c71b09a6-9214-4e3f-a795-566dbd08bdc6",
+      "name": "List Articles"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f75ab1b5-d62c-4942-9289-817c1766f10b",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12320,
+        6352
+      ],
+      "id": "14fecf86-a57e-45e9-91cb-c36b55db3642",
+      "name": "Article Found?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "fr-FR,fr;q=0.9,en;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 12000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12544,
+        6240
+      ],
+      "id": "4202de4f-3aa6-4a70-9737-92b419f40d58",
+      "name": "Fetch Article Pages",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Runs once per article, in parallel: 5 pages take about as long as 1."
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "paragraphs",
+              "cssSelector": "article p, main p, p",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {
+          "trimValues": true,
+          "cleanUpText": true
+        }
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        12768,
+        6240
+      ],
+      "id": "040fe279-2df2-471c-9ee0-f9a1450b68e9",
+      "name": "Extract Paragraphs",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per fetched page, in the same order as List Articles: clean each one and keep\n// the longest. Paywalls, cookie walls and JavaScript-only sites leave little text, so a page\n// needs at least 800 characters of real paragraphs to count.\nconst listed = $('List Articles').all();\nconst pages = $('Fetch Article Pages').all();\nconst clean = (p) => String(p || '').replace(/\\s+/g, ' ').trim();\nconst junk = /cookie|abonnez|subscribe|newsletter|javascript|publicité|consentement/i;\nlet best = null;\n$input.all().forEach((item, i) => {\n  let paras = Array.isArray(item.json.paragraphs) ? item.json.paragraphs : [];\n  if (!paras.length) {\n    // HTML node failed: fall back to a plain <p> scan of the raw page\n    const html = String((pages[i] || {}).json?.data || '');\n    paras = [...html.matchAll(/<p[^>]*>([\\s\\S]*?)<\\/p>/gi)].map(m => m[1].replace(/<[^>]+>/g, ' ')\n      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, \"'\").replace(/&quot;/g, '\"'));\n  }\n  const kept = [...new Set(paras.map(clean))].filter(p => p.length > 60 && !junk.test(p));\n  const text = kept.join('\\n\\n').slice(0, 7000);\n  if (!best || text.length > best.text.length) best = { i, text };\n});\nconst pick = listed[best ? best.i : 0].json;\nreturn [{ json: {\n  ok: !!best && best.text.length >= 800,\n  source_type: 'article',\n  title: pick.title, url: pick.url, outlet: pick.outlet,\n  text: best ? best.text : '',\n  tried: listed.length,\n  reason: 'gnews found ' + listed.length + ' article(s), but their pages were blocked, paywalled or too short'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12976,
+        6240
+      ],
+      "id": "18afe11a-bfc8-4814-9c12-7a737fff12db",
+      "name": "Pick Best Article"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1a6b28b0-c541-4d3a-a05f-eafddf0eb46d",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        13200,
+        6240
+      ],
+      "id": "4d2a4291-c1e2-4880-bd73-0010258e863d",
+      "name": "Real Article?"
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $('Apply Settings').first().json.source }}.wikipedia.org/w/api.php",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "query"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "generator",
+              "value": "search"
+            },
+            {
+              "name": "gsrsearch",
+              "value": "={{ $('Prepare Search').first().json.topic }}"
+            },
+            {
+              "name": "gsrlimit",
+              "value": "1"
+            },
+            {
+              "name": "prop",
+              "value": "extracts"
+            },
+            {
+              "name": "explaintext",
+              "value": "1"
+            },
+            {
+              "name": "exlimit",
+              "value": "1"
+            },
+            {
+              "name": "redirects",
+              "value": "1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "MotDuJourBot/1.0 (n8n student project)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12768,
+        6512
+      ],
+      "id": "be5abdb0-8354-4740-ab6e-7157d9f0fabb",
+      "name": "Search Wikipedia",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "Second source: no key, full text, never paywalled, and in far more languages than GNews."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Wikipedia returns the whole page as plain text. Drop the \"== Section ==\" headings and\n// the reference sections, keep the first 7000 characters. Under 800 counts as nothing found.\nconst lang = $('Apply Settings').first().json.source;\nconst pages = Object.values(($json.query || {}).pages || {});\nconst page = pages[0] || {};\nconst raw = String(page.extract || '');\nconst cut = raw.search(/\\n==+ ?(Notes et références|Références|Voir aussi|Bibliographie|References|See also|Notes)/i);\nconst text = (cut > 0 ? raw.slice(0, cut) : raw)\n  .split('\\n').filter(l => l.trim() && !/^==/.test(l.trim())).join('\\n\\n').slice(0, 7000);\n// why there was no news article, for the reply ($() throws if a node did not run)\nlet reason = 'gnews found no article for this topic';\ntry { reason = $('List Articles').first().json.reason || reason; } catch (e) {}\ntry { reason = $('Pick Best Article').first().json.reason; } catch (e) {}\nreturn [{ json: {\n  ok: text.length >= 800,\n  source_type: 'wikipedia',\n  title: String(page.title || ''),\n  url: page.pageid ? 'https://' + lang + '.wikipedia.org/?curid=' + page.pageid : '',\n  outlet: 'Wikipedia',\n  reason, text\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12976,
+        6512
+      ],
+      "id": "0bf00460-80a7-4fbf-a3c6-39ad687defe0",
+      "name": "Read Wikipedia"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "683d1180-c16b-4eac-a9ef-89ba5381588a",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        13200,
+        6512
+      ],
+      "id": "3ff448ee-5a3c-425c-af13-20f81e740349",
+      "name": "Wikipedia Found?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        13440,
+        6400
+      ],
+      "id": "676aa3ba-6ca6-42d9-93e5-649f8af435d1",
+      "name": "Article Ready",
+      "notesInFlow": true,
+      "notes": "Both article paths join here"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Article language: {{ $('Apply Settings').first().json.source }}. Translation language: {{ $('Apply Settings').first().json.target }} (ISO 639-1 codes).\nLearner level: {{ $('Apply Settings').first().json.level }}.\n\nFrom the article below, pick 2 or 3 themes and exactly 15 useful words or expressions at {{ $('Apply Settings').first().json.level_range }} level (no proper nouns, nothing easier than that range), grouped by theme.\nFor each: the dictionary form, its part of speech and gender if any (e.g. \"n.f.\", \"v.\", \"adj.\", \"expr.\"), a short definition written in the article language using {{ $('Apply Settings').first().json.level }}-level words, the translation in the translation language, and the exact sentence from the article where it appears.\nReturn JSON: {\"themes\": [{\"theme\": \"...\", \"words\": [{\"word\": \"...\", \"nature\": \"...\", \"definition\": \"...\", \"translation\": \"...\", \"sentence\": \"...\"}]}]}\n\nTitle: {{ $json.title }}\n\n{{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a language teacher building vocabulary lists from articles. Reply with JSON only."
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        13664,
+        6400
+      ],
+      "id": "218e9c44-49df-4571-941a-69ad0160f3f9",
+      "name": "Extract Themes And Vocab",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseJson = (t) => { const s = String(t || ''); const a = s.indexOf('{'), b = s.lastIndexOf('}'); try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return {}; } }; // tolerates ```json fences or a sentence around the JSON\n// The model wrote this list, so nothing in it is trusted as is (same idea as the lab's Check The Plan):\n// parse safely, keep only complete entries, dedupe, cap at 15, cut long fields.\nconst s = $('Apply Settings').first().json;\nconst art = $('Article Ready').first().json;\nconst d = parseJson($json.text);\nconst cut = (v, n) => String(v || '').replace(/\\s+/g, ' ').trim().slice(0, n);\nconst seen = new Set();\nconst out = [];\nfor (const t of (Array.isArray(d.themes) ? d.themes : [])) {\n  const theme = cut(t && t.theme, 60) || 'General';\n  for (const w of (t && Array.isArray(t.words) ? t.words : [])) {\n    const word = cut(w && w.word, 60).toLowerCase();\n    if (!word || !w.definition || !w.translation || seen.has(word)) continue;\n    seen.add(word);\n    out.push({ json: {\n      chat_id: s.chat_id, language: s.source, target: s.target,\n      word, nature: cut(w.nature, 20), definition: cut(w.definition, 300),\n      translation: cut(w.translation, 200), sentence: cut(w.sentence, 400),\n      theme, source_type: art.source_type, article_url: art.url, article_title: cut(art.title, 200), fallback_reason: cut(art.reason, 200)\n    } });\n    if (out.length >= 15) break;\n  }\n  if (out.length >= 15) break;\n}\nif (!out.length) throw new Error('The model returned no usable words.');\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13888,
+        6400
+      ],
+      "id": "fd49b693-9e08-4ca7-b862-b50b769252fa",
+      "name": "Check Article Vocab",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \"/add prendre du recul, épanouissement\" -> one item per word (max 5 per message).\nconst s = $json;\nconst words = [...new Set(s.arg.split(/[,;\\n]/)\n  .map(w => w.replace(/\\s+/g, ' ').trim().toLowerCase())\n  .filter(w => w && w.length <= 60))].slice(0, 5);\nreturn words.map(word => ({ json: { chat_id: s.chat_id, language: s.source, target: s.target, word } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11440,
+        6832
+      ],
+      "id": "ad356239-d745-4cf2-b406-1140ef649e39",
+      "name": "Split Added Words"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Word or expression: \"{{ $json.word }}\" in language {{ $json.language }}. Translation language: {{ $json.target }} (ISO 639-1 codes).\nGive its dictionary form, part of speech and gender if any (e.g. \"n.f.\", \"v.\", \"adj.\", \"expr.\"), a short definition in {{ $json.language }} written with {{ $('Apply Settings').first().json.level }}-level words, the translation in {{ $json.target }}, and one natural example sentence in {{ $json.language }} that contains it.\nIf it is not a real word or expression in that language, set \"valid\" to false.\nReturn JSON: {\"valid\": true, \"word\": \"...\", \"nature\": \"...\", \"definition\": \"...\", \"translation\": \"...\", \"sentence\": \"...\"}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a bilingual dictionary for language learners. Reply with JSON only."
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        11664,
+        6832
+      ],
+      "id": "c9f21c8f-44f6-46bd-91ac-e883e4fc43ed",
+      "name": "Enrich Word",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "A word whose AI call fails is passed on as an error item and skipped by Check Added Word; the other words are still saved."
+    },
+    {
+      "parameters": {
+        "jsCode": "// One AI answer per asked word, in the same order (Enrich Word keeps failed words in place\n// as {error: ...} items), so answer i belongs to word i. Matching by position avoids n8n's\n// paired items, which can be missing when several words go through the LLM chain.\nconst parseJson = (t) => { const s = String(t || ''); const a = s.indexOf('{'), b = s.lastIndexOf('}'); try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return {}; } }; // tolerates ```json fences or a sentence around the JSON\nconst cut = (v, n) => String(v || '').replace(/\\s+/g, ' ').trim().slice(0, n);\nconst asked = $('Split Added Words').all().map(i => i.json);\nconst answers = $input.all();\nconst out = [];\nanswers.forEach((item, i) => {\n  const w = asked[i] || asked[0];\n  if (item.json.error) return; // the AI call for this word failed: skip it, keep the others\n  const d = parseJson(item.json.text);\n  // dropped: words the model calls invalid, or answers missing a definition or translation\n  if (d.valid === false || !d.definition || !d.translation) return;\n  out.push({ json: {\n    chat_id: w.chat_id, language: w.language, target: w.target,\n    word: cut(d.word || (asked.length === answers.length ? w.word : ''), 60).toLowerCase(), nature: cut(d.nature, 20),\n    definition: cut(d.definition, 300), translation: cut(d.translation, 200),\n    sentence: cut(d.sentence, 400), theme: '', source_type: 'manual',\n    article_url: '', article_title: ''\n  } });\n});\nconst ok = out.filter(x => x.json.word);\nif (!ok.length) throw new Error('No valid word to save.'); // error output -> Send AI Failed\nreturn ok;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11888,
+        6832
+      ],
+      "id": "9a57e56d-f529-488f-ad6e-e7b0cd00e3cd",
+      "name": "Check Added Word",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        14144,
+        7056
+      ],
+      "id": "a7a319ad-0a62-4e70-8af5-f9ece43b7cc1",
+      "name": "Words To Save",
+      "notesInFlow": true,
+      "notes": "/article and /add join here: same fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.vocab_db }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ page_size: 1, filter: { and: [ { property: 'Word', title: { equals: $json.word } }, { property: 'Language', select: { equals: $json.language } }, { property: 'Chat ID', rich_text: { equals: $json.chat_id } } ] } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 350
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        14400,
+        7056
+      ],
+      "id": "34349f43-e244-45e7-9b43-452eaff2212a",
+      "name": "Find Duplicate",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The HTTP node returns one reply per word, in the same order: pair them by index.\nconst words = $('Words To Save').all();\nreturn $input.all().map((reply, i) => {\n  const hit = (reply.json.results || [])[0];\n  return { json: { ...words[i].json, exists: !!hit, notion_url: hit ? hit.url : '' } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        14720,
+        7040
+      ],
+      "id": "32f1df37-709a-47eb-aecb-22d1bd6efbc1",
+      "name": "Mark New Or Saved"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0830b98f-6158-4dd2-8f46-5dd5c3b38dd6",
+              "leftValue": "={{ $json.exists }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        15008,
+        7040
+      ],
+      "id": "7c0cbc58-0b1c-40c5-a9c9-1468744e0c4f",
+      "name": "Already Saved?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => {\n  const w = $json;\n  const txt = (v) => ({ rich_text: [{ text: { content: String(v || '').slice(0, 1900) } }] });\n  const today = $now.setZone($('Config').first().json.timezone).toISODate();\n  const props = {\n    'Word': { title: [{ text: { content: w.word } }] },\n    'Definition': txt(w.definition),\n    'Translation': txt(w.translation),\n    'Part of Speech': txt(w.nature),\n    'Sentence': txt(w.sentence),\n    'Language': { select: { name: w.language } },\n    'Source': { select: { name: w.source_type } },\n    'Chat ID': txt(w.chat_id),\n    'Added On': { date: { start: today } },\n    'Interval': { number: 1 },\n    'Next Review': { date: { start: $now.setZone($('Config').first().json.timezone).plus({ days: 1 }).toISODate() } }\n  };\n  if (w.theme) props['Theme'] = { multi_select: [{ name: w.theme.replace(/,/g, ' ').slice(0, 90) }] };\n  if (w.article_url) props['Article'] = { url: w.article_url };\n  return JSON.stringify({ parent: { database_id: $('Config').first().json.vocab_db }, properties: props });\n})() }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 350
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        15328,
+        7232
+      ],
+      "id": "14082e8a-0d44-44e7-9d62-c0a2b3eac0b7",
+      "name": "Create Word Page",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Notion returns the new page; put the word fields back next to its URL.\n// After its retries, a failed Create Word Page passes on {error: ...} instead of a page.\nconst w = $('Mark New Or Saved').item.json;\nconst ok = $json.object === 'page';\nconst e = $json.error;\nconst why = $json.message || (typeof e === 'string' ? e : (e && (e.description || e.message))) || 'Notion error';\nreturn { json: { ...w, created: ok, notion_url: ok ? $json.url : '', error: ok ? '' : String(why).slice(0, 200) } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15520,
+        7232
+      ],
+      "id": "d2515ab7-15cc-46cb-8a52-a2405adcbbe6",
+      "name": "Keep The Word"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        15696,
+        7040
+      ],
+      "id": "73e70190-3d1a-42ca-9f64-28753c13e474",
+      "name": "Gather Words"
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTML for Telegram. Every line is complete on its own, so Split Long Message\n// can cut between lines without breaking a tag. Change the look here: one emoji per role.\nconst ICON = { fresh: '🍓', saved: '🪼', failed: '🌀', article: '⛄️', wiki: '🐚', translation: '🪷', theme: '🐞', link: '🐾' };\nconst s = $('Apply Settings').first().json;\nconst items = $input.all().map(i => i.json);\nconst esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst link = (url, label) => url ? ICON.link + ' <a href=\"' + esc(url) + '\">' + label + '</a>' : null; // null lines are dropped at the end\nconst fresh = items.filter(w => w.created);\nconst saved = items.filter(w => w.exists);\nconst failed = items.filter(w => !w.created && !w.exists);\nconst lines = [];\n\nif (s.route === 'article') {\n  const a = items[0] || {};\n  if (a.source_type === 'article') lines.push(ICON.article + ' <b>' + esc(a.article_title) + '</b>', link(a.article_url, 'read the article'));\n  else lines.push(ICON.wiki + ' <b>' + esc(a.article_title) + '</b> (wikipedia)', link(a.article_url, 'read the page'), '<i>no usable news article: ' + esc(a.fallback_reason) + '.</i>');\n  const themes = [...new Set(items.map(w => w.theme))];\n  for (const t of themes) {\n    lines.push('', ICON.theme + ' <b>' + esc(t) + '</b>');\n    for (const w of items.filter(x => x.theme === t)) {\n      const mark = w.created ? ICON.fresh : (w.exists ? ICON.saved : ICON.failed);\n      lines.push(mark + ' <b>' + esc(w.word) + '</b> ' + esc(w.nature) + ' ' + ICON.translation + ' ' + esc(w.translation));\n    }\n  }\n  const count = [ICON.fresh + ' ' + fresh.length + ' new', ICON.saved + ' ' + saved.length + ' already saved'];\n  if (failed.length) count.push(ICON.failed + ' ' + failed.length + ' failed');\n  lines.push('', count.join(' · '));\n} else {\n  for (const w of items) {\n    lines.push('');\n    if (w.exists) { lines.push(ICON.saved + ' <b>' + esc(w.word) + '</b> is already saved'); lines.push(link(w.notion_url, 'open in notion')); continue; }\n    if (!w.created) { lines.push(ICON.failed + ' <b>' + esc(w.word) + '</b> could not be saved: ' + esc(w.error)); continue; }\n    lines.push(ICON.fresh + ' <b>' + esc(w.word) + '</b> ' + esc(w.nature));\n    lines.push(esc(w.definition));\n    lines.push(ICON.translation + ' ' + esc(w.translation));\n    if (w.sentence) lines.push('<i>' + esc(w.sentence) + '</i>');\n    lines.push(link(w.notion_url, 'open in notion'));\n  }\n}\nreturn [{ json: { text: lines.filter(l => l !== null).join('\\n').trim() } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15872,
+        7040
+      ],
+      "id": "37e79d85-19a8-4d82-b566-f4e367820b1d",
+      "name": "Build Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Telegram allows max 4096 characters per message: cut at line breaks, one item per chunk.\nconst MAX = 4000;\nlet rest = String($json.text || '');\nconst chunks = [];\nwhile (rest.length > MAX) {\n  let cut = rest.lastIndexOf('\\n', MAX);\n  if (cut < MAX / 2) cut = MAX;\n  chunks.push(rest.slice(0, cut));\n  rest = rest.slice(cut).trimStart();\n}\nif (rest) chunks.push(rest);\nreturn chunks.map(text => ({ json: { text } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16048,
+        7040
+      ],
+      "id": "c6dd4aae-8c24-4887-ac11-5bd77ebb0163",
+      "name": "Split Long Message"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Apply Settings').first().json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        16192,
+        7024
+      ],
+      "id": "16794613-20d4-4941-8f42-9878bc70333d",
+      "name": "Send Reply",
+      "webhookId": "dba6f329-59df-4e99-a2a8-8fce7956c5c1",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Apply Settings').first().json.chat_id }}",
+        "text": "ai has failed, please try again! 🌀",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        14096,
+        7808
+      ],
+      "id": "e29b06f8-117f-4c3a-8dab-1512a2597cac",
+      "name": "Send AI Failed",
+      "webhookId": "0b8b00f3-838b-4517-b7f4-ad6eff34a4de",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// /lang, /level, /time and /words all land here. Each command is checked, and only the\n// Notion properties that change are built; Update Settings / Create Settings send them as is.\n// Success replies end with 🪷, failures with 🌀.\n\n// Article languages: the 26 GNews supports (Wikipedia is only a fallback for these).\nconst SOURCES = {\n  ar: 'Arabic', bn: 'Bengali', zh: 'Chinese', nl: 'Dutch', en: 'English', fr: 'French',\n  de: 'German', el: 'Greek', he: 'Hebrew', hi: 'Hindi', id: 'Indonesian', it: 'Italian',\n  ja: 'Japanese', ml: 'Malayalam', mr: 'Marathi', no: 'Norwegian', pt: 'Portuguese',\n  pa: 'Punjabi', ro: 'Romanian', ru: 'Russian', es: 'Spanish', sv: 'Swedish', ta: 'Tamil',\n  te: 'Telugu', tr: 'Turkish', uk: 'Ukrainian'\n};\n// Translation languages: any of these, as a code or a full name.\nconst TARGETS = {\n  ...SOURCES,\n  af: 'Afrikaans', sq: 'Albanian', am: 'Amharic', hy: 'Armenian', az: 'Azerbaijani', eu: 'Basque',\n  be: 'Belarusian', bs: 'Bosnian', bg: 'Bulgarian', my: 'Burmese', ca: 'Catalan', hr: 'Croatian',\n  cs: 'Czech', da: 'Danish', et: 'Estonian', fil: 'Filipino', fi: 'Finnish', gl: 'Galician',\n  ka: 'Georgian', gu: 'Gujarati', ha: 'Hausa', hu: 'Hungarian', is: 'Icelandic', ig: 'Igbo',\n  ga: 'Irish', jv: 'Javanese', kn: 'Kannada', kk: 'Kazakh', km: 'Khmer', ko: 'Korean',\n  ku: 'Kurdish', ky: 'Kyrgyz', lo: 'Lao', la: 'Latin', lv: 'Latvian', lt: 'Lithuanian',\n  lb: 'Luxembourgish', mk: 'Macedonian', mg: 'Malagasy', ms: 'Malay', mt: 'Maltese', mi: 'Maori',\n  mn: 'Mongolian', ne: 'Nepali', ps: 'Pashto', fa: 'Persian', pl: 'Polish', sr: 'Serbian',\n  si: 'Sinhala', sk: 'Slovak', sl: 'Slovenian', so: 'Somali', sw: 'Swahili', tl: 'Tagalog',\n  tg: 'Tajik', th: 'Thai', ur: 'Urdu', uz: 'Uzbek', vi: 'Vietnamese', cy: 'Welsh',\n  xh: 'Xhosa', yi: 'Yiddish', yo: 'Yoruba', zu: 'Zulu'\n};\nconst LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'];\n\nconst s = $json;\nconst arg = s.arg.toLowerCase().trim();\nconst txt = (v) => ({ rich_text: [{ text: { content: String(v) } }] });\n// \"fr\" or \"french\" -> \"fr\"\nconst find = (word, list) => {\n  if (!word) return '';\n  if (list[word]) return word;\n  return Object.keys(list).find(c => list[c].toLowerCase() === word) || '';\n};\nconst sourceList = Object.keys(SOURCES).map(c => SOURCES[c] + ' (' + c + ')').join(', ');\nconst pad = (h) => String(h).padStart(2, '0') + ':00';\n\nlet ok = false;\nlet props = {};\nlet reply = '';\n\nif (s.command === '/lang') {\n  const [a, b] = arg.split(/\\s+/);\n  const src = find(a, SOURCES);\n  const tgt = find(b, TARGETS);\n  ok = !!(src && tgt && src !== tgt);\n  if (ok) {\n    props = { 'Source Language': txt(src), 'Target Language': txt(tgt) };\n    reply = 'vocab in ' + SOURCES[src] + ', translation in ' + TARGETS[tgt] + ' 🪷\\n\\navailable languages are ' + sourceList;\n  } else {\n    reply = 'please use the code of available languages: ' + sourceList\n      + '\\n\\nthe translation language can be any language, as a code or a full name, e.g. /lang fr english 🌀';\n  }\n} else if (s.command === '/level') {\n  const lv = arg.replace(/\\s+/g, '');\n  ok = LEVELS.includes(lv);\n  if (ok) {\n    props = { 'Level': txt(lv) };\n    reply = 'level set to ' + lv + ' 🪷\\nnew vocab and definitions will be tailored to your level';\n  } else {\n    reply = 'please choose a level from a1 to c2, e.g. /level b2 🌀';\n  }\n} else if (s.command === '/time') {\n  const parts = arg.split(/[\\s,]+/).filter(Boolean);\n  const hours = [...new Set(parts.map(Number))].sort((x, y) => x - y);\n  ok = parts.length >= 1 && parts.length <= 2 && parts.every(p => /^\\d{1,2}$/.test(p))\n    && hours.every(h => h >= 0 && h <= 23);\n  if (ok) {\n    props = { 'Recall Hours': txt(hours.join(',')) };\n    reply = 'active recall at ' + hours.map(pad).join(' and ') + ' every day 🪷\\neach word is sent once a day';\n  } else {\n    reply = 'please send one or two hours from 0 to 23, e.g. /time 8 or /time 8 20 🌀';\n  }\n} else if (s.command === '/words') {\n  ok = /^\\d{1,2}$/.test(arg) && Number(arg) >= 1 && Number(arg) <= 20;\n  if (ok) {\n    props = { 'Daily Words': txt(Number(arg)) };\n    reply = \"you'll be tested on \" + Number(arg) + ' word' + (Number(arg) > 1 ? 's' : '') + ' every day 🪷';\n  } else {\n    reply = 'please send a number from 1 to 20, e.g. /words 10 🌀';\n  }\n}\n\nreturn [{ json: { ...s, ok, props, reply } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11440,
+        7312
+      ],
+      "id": "31be1afe-5efd-46c7-8b1a-107aab241aaf",
+      "name": "Check Setting"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a53a4a4b-2358-4ca7-a793-8dfd19635efe",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11664,
+        7312
+      ],
+      "id": "fa9d1112-41c8-49a5-8bfe-52eea2bb5066",
+      "name": "Valid Setting?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5738b113-c860-4fb4-a6e7-d8ed43b5bc9b",
+              "leftValue": "={{ $json.settings_page_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11888,
+        7248
+      ],
+      "id": "d4b77931-9b89-4c44-b369-b3ca9eaea85a",
+      "name": "Has Settings Row?"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.settings_page_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $json.props }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12096,
+        7168
+      ],
+      "id": "2d0f91af-1286-4555-b1d3-e4cd2324fc9b",
+      "name": "Update Settings",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { database_id: $('Config').first().json.settings_db }, properties: { 'Chat ID': { title: [{ text: { content: $json.chat_id } }] }, ...$json.props } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12096,
+        7328
+      ],
+      "id": "05d39936-27e5-4371-acb4-0851465241d9",
+      "name": "Create Settings",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Apply Settings').first().json.chat_id }}",
+        "text": "={{ ($json.object === 'error' || $json.error) ? 'notion could not save this setting: ' + String($json.message || ($json.error && ($json.error.description || $json.error.message)) || $json.error).replace(/</g, '&lt;') + ' 🌀' : $('Check Setting').first().json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12320,
+        7312
+      ],
+      "id": "8627373e-f7fa-41f2-95e1-99751b599978",
+      "name": "Send Settings Reply",
+      "webhookId": "c3327996-600c-47a6-b4dc-ee0cd5b14c23",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// callback_data is \"k:<page id>\" (I know it!) or \"n:<page id>\" (No clue!), set by the recall workflow.\n// Anyone can send any callback_data to a bot, so it is checked like any other input.\nconst s = $json;\nconst m = /^([kn]):([0-9a-f]{32})$/.exec(s.callback_data);\nreturn [{ json: { ...s, valid: !!m, knew: m ? m[1] === 'k' : false, page_id: m ? m[2] : '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11440,
+        7664
+      ],
+      "id": "93b00e7c-bf03-42ff-b70f-7402d8712446",
+      "name": "Read Button"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2210af2c-548e-4d70-8a16-e873829a2853",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11664,
+        7664
+      ],
+      "id": "ddd8888b-74c8-48a0-bdf5-54e8a8649a38",
+      "name": "Valid Button?"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        11888,
+        7600
+      ],
+      "id": "40bc9dfd-a23b-4309-974a-badbad033d75",
+      "name": "Get Word Page",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Spaced repetition: I know it! doubles the interval (1, 2, 4, 8, 16... capped at 180 days),\n// No clue! resets it to 1 day. Next review = today + interval.\nconst b = $('Read Button').first().json;\nconst tz = $('Config').first().json.timezone;\nconst props = $json.properties || {};\nconst owner = ((props['Chat ID'] || {}).rich_text || []).map(t => t.plain_text).join('');\nconst old = (props['Interval'] || {}).number || 1;\nconst interval = b.knew ? Math.min(old * 2, 180) : 1;\nconst next = DateTime.now().setZone(tz).plus({ days: interval }).toISODate();\nreturn [{ json: { ...b, mine: $json.object === 'page' && owner === b.chat_id, interval, next } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12096,
+        7600
+      ],
+      "id": "39ddc723-4d58-47a7-bad0-a44e1f831665",
+      "name": "Compute Next Review"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6012537b-8d6c-419f-8513-6f73811b78b1",
+              "leftValue": "={{ $json.mine }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12320,
+        7600
+      ],
+      "id": "83ffc158-00c7-45af-8b7d-6975775c930d",
+      "name": "Word Belongs To Chat?"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { 'Interval': { number: $json.interval }, 'Next Review': { date: { start: $json.next } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12544,
+        7552
+      ],
+      "id": "f98e3bbc-18ac-404f-a2c8-6501d4c5cc63",
+      "name": "Update Interval",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionApi": {
+          "id": "cvbl4xKDYYz3huua",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Read Button').first().json.callback_id }}",
+        "additionalFields": {
+          "text": "={{ $('Compute Next Review').first().json.knew ? '🌠 bravo! next review in ' + $('Compute Next Review').first().json.interval + ' days' : '🍄 back tomorrow' }}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12768,
+        7552
+      ],
+      "id": "c6449f2c-85b1-442b-a697-564894c54060",
+      "name": "Answer Button",
+      "webhookId": "108d4974-2fa5-411d-8a65-3b99d263308f",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $('Read Button').first().json.chat_id }}",
+        "messageId": "={{ $('Read Button').first().json.message_id }}",
+        "text": "={{ $('Read Button').first().json.message_text }}\n\n{{ $('Compute Next Review').first().json.knew ? '🌠 you knew it' : '🍄 no clue' }} · next review in {{ $('Compute Next Review').first().json.interval }} day(s), {{ $('Compute Next Review').first().json.next }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12976,
+        7552
+      ],
+      "id": "ff7237b5-4712-41d7-8a07-afdfc36616f1",
+      "name": "Edit Prompt",
+      "webhookId": "0c7c634e-909f-42a7-bd1c-3dda36aa93b3",
+      "notesInFlow": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      },
+      "notes": "Editing the text also removes the buttons, so a word can't be graded twice."
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Read Button').first().json.callback_id }}",
+        "additionalFields": {
+          "text": "🌀 this word is no longer available."
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12544,
+        7760
+      ],
+      "id": "6813bd53-34bc-492b-9eca-75fc4df99f5d",
+      "name": "Answer Invalid Button",
+      "webhookId": "f3fd0ee6-9678-4286-9a49-c6115604c728",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Router\nOne Telegram Trigger for messages **and** button taps (since a bot only has one webhook). \nNormalize The Update gives every branch the same fields. \nGet Settings reads the chat's languages and level from Notion, to ensure consistency.",
+        "height": 220,
+        "width": 1500
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        9840,
+        6944
+      ],
+      "id": "ccb7349d-3b2d-41f1-a705-2ab6a9724a9d",
+      "name": "Note Router"
+    },
+    {
+      "parameters": {
+        "content": "## /article or plain text\nGNews search (5 results) → fetch all 5 pages in parallel → HTML paragraphs → keep the longest real one. No usable news page → Wikipedia in the same language. Both fail → ask for another topic. Then 2-3 themes and 15 words around the learner's level, checked in code.",
+        "height": 220,
+        "width": 2700,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        11376,
+        6080
+      ],
+      "id": "32a6543f-2265-46af-8eef-8fae6e3caf28",
+      "name": "Note Article"
+    },
+    {
+      "parameters": {
+        "content": "## Shared save loop\nBoth /article and /add arrive at Words To Save with the same fields. One Notion query per word (350 ms apart) skips duplicates; new words are created with interval 1, review tomorrow.",
+        "height": 168,
+        "width": 1296,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        14272,
+        6848
+      ],
+      "id": "d9802013-1e24-4fd3-bfc6-658db25fb12b",
+      "name": "Note Save"
+    },
+    {
+      "parameters": {
+        "content": "## Button taps from the morning recall\nI know it! doubles the interval, No clue! resets it to 1 day.",
+        "height": 120,
+        "width": 1820,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        11376,
+        7504
+      ],
+      "id": "df1be2bb-9284-4e59-aea2-ac8019c5eed7",
+      "name": "Note Button"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Apply Settings').first().json.chat_id }}",
+        "text": "couldn't find any article on this topic 🌀\ntry another one with /article &lt;topic&gt;!",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13424,
+        6640
+      ],
+      "id": "6ff78b96-46bf-43fb-a9d3-c5de4ef94fa1",
+      "name": "Send No Article",
+      "webhookId": "fa35b7d1-1407-4f81-a3f3-156e10439100",
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Settings: /lang /level /time /words\nCheck Setting validates the command and builds only the Notion properties that change. Existing row → PATCH, no row → create. Notion Settings columns: Chat ID (title), Source Language, Target Language, Level, Recall Hours, Daily Words (all text).",
+        "width": 1100,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        11376,
+        6976
+      ],
+      "id": "0776682b-b8a1-4662-bb28-ca26af92e0af",
+      "name": "Note Settings"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "WZMIUOtrxyI3XAfL",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/WZMIUOtrxyI3XAfL",
+          "cachedResultName": "vocab bot recall"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chat_id": "={{ $json.chat_id }}"
+          },
+          "matchingColumns": [
+            "chat_id"
+          ],
+          "schema": [
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        11392,
+        7984
+      ],
+      "id": "af4e3bcb-bfcc-45c2-a871-64a03a5f3adc",
+      "name": "Start Review",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "notes": "Sub-workflow: runs 'vocab bot recall' for this chat only. Re-select the workflow after importing."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalize The Update').first().json.chat_id }}",
+        "text": "={{ (() => {\n  const route = $('Normalize The Update').first().json.route;\n  const tips = {\n    article: 'try a different or broader topic, e.g. /article climat, or try again in a minute',\n    add: 'check the spelling, send fewer words at once (max 5), and try again',\n    settings: 'check the format with /help and send the command again',\n    button: \"your answer wasn't recorded, but the word will come back in a later quiz\",\n    review: 'try /review again in a minute'\n  };\n  return 'oops 🌀 something went wrong on my side.\\n' + (tips[route] || 'try again in a minute, or send /help');\n})() }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12560,
+        8032
+      ],
+      "id": "f9c6fde7-5b67-442d-8b26-96ca14051b0a",
+      "name": "Send Error Message",
+      "webhookId": "82609bf7-9282-4424-9dce-d938946a1ac9",
+      "executeOnce": true,
+      "notesInFlow": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "Hru0oxSApcxsnpIH",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Error branch: Get Settings, Find Duplicate, Update Interval or Start Review failed after their retries. Tip depends on what the user was doing."
+    },
+    {
+      "parameters": {
+        "content": "## Error branch\nAfter their retries, these nodes send failures here instead of crashing: **Get Settings**, **Find Duplicate**, **Update Interval**, **Start Review**. The user gets a tip based on what they were doing.",
+        "width": 900,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        11584,
+        8128
+      ],
+      "id": "dce81a05-37e4-410f-8c03-32f71a3fc46c",
+      "name": "Note Errors"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize The Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize The Update": {
+      "main": [
+        [
+          {
+            "node": "Usable Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usable Message?": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Apply Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Settings": {
+      "main": [
+        [
+          {
+            "node": "Route The Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route The Update": {
+      "main": [
+        [
+          {
+            "node": "Prepare Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Added Words",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Setting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Button",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Search": {
+      "main": [
+        [
+          {
+            "node": "Search GNews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search GNews": {
+      "main": [
+        [
+          {
+            "node": "List Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Articles": {
+      "main": [
+        [
+          {
+            "node": "Article Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Article Found?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Article Pages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Wikipedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Article Pages": {
+      "main": [
+        [
+          {
+            "node": "Extract Paragraphs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Paragraphs": {
+      "main": [
+        [
+          {
+            "node": "Pick Best Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Best Article": {
+      "main": [
+        [
+          {
+            "node": "Real Article?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Real Article?": {
+      "main": [
+        [
+          {
+            "node": "Article Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Wikipedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Wikipedia": {
+      "main": [
+        [
+          {
+            "node": "Read Wikipedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Wikipedia": {
+      "main": [
+        [
+          {
+            "node": "Wikipedia Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wikipedia Found?": {
+      "main": [
+        [
+          {
+            "node": "Article Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Article Ready": {
+      "main": [
+        [
+          {
+            "node": "Extract Themes And Vocab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Themes And Vocab": {
+      "main": [
+        [
+          {
+            "node": "Check Article Vocab",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Article Vocab": {
+      "main": [
+        [
+          {
+            "node": "Words To Save",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Added Words": {
+      "main": [
+        [
+          {
+            "node": "Enrich Word",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Word": {
+      "main": [
+        [
+          {
+            "node": "Check Added Word",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Added Word": {
+      "main": [
+        [
+          {
+            "node": "Words To Save",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Words To Save": {
+      "main": [
+        [
+          {
+            "node": "Find Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Mark New Or Saved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark New Or Saved": {
+      "main": [
+        [
+          {
+            "node": "Already Saved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Saved?": {
+      "main": [
+        [
+          {
+            "node": "Gather Words",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Word Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Word Page": {
+      "main": [
+        [
+          {
+            "node": "Keep The Word",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep The Word": {
+      "main": [
+        [
+          {
+            "node": "Gather Words",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Gather Words": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply": {
+      "main": [
+        [
+          {
+            "node": "Split Long Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Long Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Settings Row?": {
+      "main": [
+        [
+          {
+            "node": "Update Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Settings": {
+      "main": [
+        [
+          {
+            "node": "Send Settings Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Settings": {
+      "main": [
+        [
+          {
+            "node": "Send Settings Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Button": {
+      "main": [
+        [
+          {
+            "node": "Valid Button?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Button?": {
+      "main": [
+        [
+          {
+            "node": "Get Word Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer Invalid Button",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Word Page": {
+      "main": [
+        [
+          {
+            "node": "Compute Next Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Next Review": {
+      "main": [
+        [
+          {
+            "node": "Word Belongs To Chat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Word Belongs To Chat?": {
+      "main": [
+        [
+          {
+            "node": "Update Interval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer Invalid Button",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Interval": {
+      "main": [
+        [
+          {
+            "node": "Answer Button",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Button": {
+      "main": [
+        [
+          {
+            "node": "Edit Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Themes And Vocab",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Enrich Word",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Setting": {
+      "main": [
+        [
+          {
+            "node": "Valid Setting?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Setting?": {
+      "main": [
+        [
+          {
+            "node": "Has Settings Row?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Settings Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Review": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "137b35b7-76e6-4e20-b439-417f0db68183",
+  "meta": {
+    "instanceId": "e86daec22b70130ce96081bce6e5d66c20b6a2b27fdb6661dc160e3f5d1179ea"
+  },
+  "nodeGroups": [],
+  "id": "Z9rTLByU5jeShRVh",
+  "tags": []
+}
